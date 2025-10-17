@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Satellite Look Angle Calculator</title>
+  <link rel="icon" href="https://raw.githubusercontent.com/pgarciafer/satcalc/main/logo1.png" type="image/png">
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="index.css" />
+
+</head>
+<body>
+<div class="main-container">
+  <div class="card" role="region" aria-label="Device coordinates">
+    <h1>Satellite Look Angle Calculator</h1>
+
+    <div class="main-column">
+        <div class="button-row">
+          <button id="refreshBtn" class="small" data-html2canvas-ignore="true">Get Location</button>
+          <button id="copyBtn" class="small secondary" disabled data-html2canvas-ignore="true">Copy</button>
+          <button id="pdfBtn" class="small secondary" data-html2canvas-ignore="true">PDF</button>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+          <label for="file-input">Load Satellite Constellation File:</label>
+          <input type="file" id="file-input" accept=".json">
+        </div>
+
+        <div class="responsive-layout">
+          <div class="coords" aria-live="polite">
+            <div class="coord-item">
+              <label for="lat">Latitude</label>
+              <input id="lat" type="text" inputmode="decimal" value="38.88" />
+              <select id="latDir"><option value="N" selected>N</option><option value="S">S</option></select>
+            </div>
+            <div class="coord-item">
+              <label for="lon">Longitude</label>
+              <input id="lon" type="text" inputmode="decimal" value="1.40" />
+              <select id="lonDir"><option value="E" selected>E</option><option value="W">W</option></select>
+            </div>
+            <div class="coord-item">
+              <label for="satLon">Satellite Longitude</label>
+              <input id="satLon" type="text" inputmode="decimal" value="18.00" />
+              <select id="satLonDir"><option value="E">E</option><option value="W" selected>W</option></select>
+            </div>
+            <div class="coord-item">
+              <label for="heading">Heading</label>
+              <input id="heading" type="text" inputmode="decimal" value="0.00" />
+              <div style="width:48px;"></div>
+            </div>
+          </div>
+
+
+          <div id="blockingZonesSection">
+            <div class="header-center">
+              <label>Blockage Zones</label>
+            </div>
+            <table id="zonesTable" style="display:none;">
+              <thead>
+                <tr>
+                  <th>AZ Start</th>
+                  <th>AZ Stop</th>
+                  <th>EL Blockage</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="zonesBody"></tbody>
+            </table>
+            <button type="button" id="addBlockBtn" data-html2canvas-ignore="true">Add Blockage Zone</button>
+          </div>
+		            <div class="coord-item" style="display:none;">
+            <label for="satDropdown">Visible Satellites</label>
+            <select id="satDropdown"></select>
+            <div style="width:48px;"></div>
+          </div>
+        </div>
+
+        <div class="responsive-layout">
+          <div class="diagram-info">
+            <div id="azVal">AZ=</div>
+            <div id="elVal">EL=</div>
+            <div id="relVal" style="font-weight:bold">REL=</div>
+            <div id="relBlockMsg" style="font-weight:bold; margin-top:4px;"></div>
+            <table id="trimTable" class="narrow-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>RX Green</th>
+                        <th>Current Trim</th>
+                        <th>New Trim</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>AZ Trim</td>
+                        <td><input type="text" id="azGreen" inputmode="decimal"></td>
+                        <td><input type="text" id="azCurrent" inputmode="decimal" value="0"></td>
+                        <td><input type="text" id="azNew" readonly></td>
+                    </tr>
+                    <tr>
+                        <td>EL Trim</td>
+                        <td><input type="text" id="elGreen" inputmode="decimal"></td>
+                        <td><input type="text" id="elCurrent" inputmode="decimal" value="0"></td>
+                        <td><input type="text" id="elNew" readonly></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div id="visibleRange" style="font-weight:bold;"></div>
+          </div>
+          <div id="vessel-diagram-container" class="diagram">
+            <canvas id="vesselCanvas" width="300" height="300"></canvas>
+          </div>
+        </div>
+
+        <div class="centered-stacked-layout">
+          <div class="diagram">
+            <canvas id="elGraph" width="300" height="150"></canvas>
+          </div>
+          <div id="satRangesList"></div>
+        </div>
+        
+    </div>
+  </div>
+
+  <div class="card" style="display:flex; flex-direction:column;">
+    <div id="mapid"></div>
+
+    <div class="sat-lists-container">
+        <div id="visibleSatellites" class="sat-list">
+            <h4>Visible and Unblocked Satellites</h4>
+        </div>
+        <div id="blockedSatellites" class="sat-list">
+            <h4>Blocked Satellites</h4>
+        </div>
+        <div id="satelliteDetails" class="sat-list">
+            <h4>Satellite Details</h4>
+            <div id="beamDetails"></div>
+        </div>
+    </div>
+  </div>
+</div>
+    
+  <div id="pdfLayout" style="display:none;"></div>
+    
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <script type="module" src="index.tsx"></script>
+</body>
+</html>
