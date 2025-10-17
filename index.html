@@ -314,23 +314,9 @@
       overflow-y: auto;
     }
     .sat-list h4 { margin-top: 0; margin-bottom: 10px; font-size: 16px; font-weight: 600; }
-    .sat-list-item {
-      display: flex;
-      align-items: center;
-      padding: 5px;
-      border-bottom: 1px solid #f1f5f9;
-      cursor: pointer;
-      text-align: left;
-    }
+    .sat-list-item { padding: 5px; border-bottom: 1px solid #f1f5f9; cursor: pointer; }
     .sat-list-item:hover { background-color: #f8fafc; }
     .sat-list-item.selected { background-color: #e0f2fe; font-weight: bold; }
-    .sat-list-color-indicator {
-        display: inline-block;
-        width: 14px;
-        height: 14px;
-        margin-right: 8px;
-        flex-shrink: 0;
-    }
     #zonesTable td:first-child { display: flex; align-items: center; justify-content: center; }
     #zonesTable td:first-child input { flex-grow: 1; }
     #zonesTable td:first-child span { margin-right: 5px; }
@@ -506,7 +492,6 @@
     const elGreenEl = document.getElementById('elGreen');
     const elCurrentEl = document.getElementById('elCurrent');
     const elNewEl = document.getElementById('elNew');
-    let selectedBeamId = null;
     
     function formatNumber(num) {
       return (Math.round(num * 100) / 100).toString().replace(/\.00$/, "");
@@ -974,7 +959,6 @@ if (blockZones) {
       copyBtn.disabled = false;
       pdfBtn.disabled = false;
       computeSatRangesAndRender();
-      adjustGraphHeight();
       drawElGraph(lat, lon);
       buildLegendAndMap();
       updateSatelliteLists();
@@ -1316,10 +1300,17 @@ pdfBtn.addEventListener("click", () => {
 
     // --- Leaflet Map and Plotter Functionality ---
     
-    // NOTE: Removed WORLD_MAX_BOUNDS and related restrictions for infinite horizontal scroll
+    // Define bounds for two world maps: -180 to 540 degrees longitude
+    const WORLD_MAX_BOUNDS = L.latLngBounds(
+        L.latLng(-90, -180), // South-West corner (Latitude, Longitude)
+        L.latLng(90, 540)    // North-East corner (Latitude, Longitude)
+    );
 
     let mymap = L.map('mapid', {
-        bounceAtZoomLimits: false 
+        bounceAtZoomLimits: false,
+        maxBounds: WORLD_MAX_BOUNDS, // Apply the two-world max bounds
+        maxBoundsViscosity: 1.0,     // Prevent dragging outside these bounds
+        worldCopyJump: true          // Essential for world wrapping logic
     }).setView([0, 0], 2);
 
     // Variable to hold the marker and its duplicates
@@ -1327,7 +1318,10 @@ pdfBtn.addEventListener("click", () => {
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
-        attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+        attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+        // Set tile bounds to cover the two world copies
+        bounds: L.latLngBounds([[-90, -180], [90, 540]]),
+        noWrap: false // Keep noWrap false to allow tile wrapping within the bounds
     }).addTo(mymap);
 
     // To ensure the map centers on the prime meridian copy initially
@@ -1336,7 +1330,7 @@ pdfBtn.addEventListener("click", () => {
     }
     
     let userMarker = null; // The primary marker instance
-    var legendControl;
+    let legendControl;
     let allBeamsData = {};
     let layersMap = new Map();
     const satDropdown = document.getElementById('satDropdown');
@@ -1542,15 +1536,14 @@ pdfBtn.addEventListener("click", () => {
                     const maxLon = antimeridianFixedPoints.reduce((max, p) => Math.max(max, p[1]), -Infinity);
                     
                     // A heuristic: if the polygon spans close to the 180/-180 line, or is wide enough to show on copies.
+                    // MODIFIED: Only need one duplication (360 shift) since we limit map bounds to two worlds.
                     const isNearAntimeridian = minLon < -160 || maxLon > 160 || (maxLon - minLon) > 300;
 
                     if (isNearAntimeridian) {
-                        // Add duplication for multiple world copies for infinite scroll effect
-                        const shiftBase = [360, 720, 1080];
-                        shiftBase.forEach(shift => {
-                            layers.push(addPolygonLayer(antimeridianFixedPoints, -shift));
-                            layers.push(addPolygonLayer(antimeridianFixedPoints, shift));
-                        });
+                        // Add duplication for one extra world copy to cover the bounds.
+                        // We check the bounds later, only need to add -360 and +360 shift.
+                        layers.push(addPolygonLayer(antimeridianFixedPoints, -360));
+                        layers.push(addPolygonLayer(antimeridianFixedPoints, 360));
                     }
                     
                 } else if (contour.type === 0 && contour.center && contour.radius) {
@@ -1567,12 +1560,10 @@ pdfBtn.addEventListener("click", () => {
                     // ----------------------------------------------------------------------------------
                     layers.push(layer);
                     
-                    // Duplicate circles for infinite map copies:
-                    const shiftBase = [360, 720, 1080];
-                    shiftBase.forEach(shift => {
-                        layers.push(L.circle([contour.center[0], contour.center[1] - shift], { color: beamColor, fillColor: beamColor, fillOpacity: 0.5, radius: contour.radius * 1000, isContour: true }));
-                        layers.push(L.circle([contour.center[0], contour.center[1] + shift], { color: beamColor, fillColor: beamColor, fillOpacity: 0.5, radius: contour.radius * 1000, isContour: true }));
-                    });
+                    // Duplicate circles for two map copies bounds:
+                    // MODIFIED: Only need -360 and +360 shift.
+                    layers.push(L.circle([contour.center[0], contour.center[1] - 360], { color: beamColor, fillColor: beamColor, fillOpacity: 0.5, radius: contour.radius * 1000, isContour: true }));
+                    layers.push(L.circle([contour.center[0], contour.center[1] + 360], { color: beamColor, fillColor: beamColor, fillOpacity: 0.5, radius: contour.radius * 1000, isContour: true }));
                 }
             });
             const layerGroup = L.layerGroup(layers);
@@ -1615,7 +1606,8 @@ pdfBtn.addEventListener("click", () => {
                 });
                 
                 // 3. Check for visibility against the central, +360, and -360 versions of the polygon.
-                const potentialUserLons = [userLon, userLon + 360, userLon - 360, userLon + 720, userLon - 720];
+                // MODIFIED: Only need to check the three wraps that cover the two world maps (-180 to 540)
+                const potentialUserLons = [userLon, userLon + 360, userLon - 360];
                 
                 for (const shiftedUserLon of potentialUserLons) {
                     // Check if the shifted user longitude falls within the polygon's corrected longitude span, plus a tolerance for the actual intersection test.
@@ -1636,7 +1628,8 @@ pdfBtn.addEventListener("click", () => {
                 // For circles, we check multiple wraps for the center point to see if the user is in the circle on any map copy.
                 const userLat = userPoint.lat;
                 const userLon = userPoint.lng;
-                const centerLons = [center.lng, center.lng + 360, center.lng - 360, center.lng + 720, center.lng - 720];
+                // MODIFIED: Only need to check the three wraps
+                const centerLons = [center.lng, center.lng + 360, center.lng - 360];
                 const radiusM = contour.radius * 1000;
                 
                 for (const centerLon of centerLons) {
@@ -1733,12 +1726,10 @@ ${carriersInfo}
         userMarker.setLatLng(userPoint);
         userMarkerGroup.addLayer(userMarker);
 
-        // Add marker duplicates for infinite world wrapping
-        const shiftBase = [360, 720, 1080];
-        shiftBase.forEach(shift => {
-            userMarkerGroup.addLayer(L.marker(L.latLng(userLat, userLon + shift)));
-            userMarkerGroup.addLayer(L.marker(L.latLng(userLat, userLon - shift)));
-        });
+        // Add marker duplicates for two world wraps (only need 360 and -360)
+        // MODIFIED: Only add -360 and +360 shift.
+        userMarkerGroup.addLayer(L.marker(L.latLng(userLat, userLon + 360)));
+        userMarkerGroup.addLayer(L.marker(L.latLng(userLat, userLon - 360)));
         
         // 2. CLEAR AND UPDATE BEAM LAYERS
         Object.keys(allBeamsData).forEach(id => {
@@ -1877,24 +1868,18 @@ ${carriersInfo}
     }
     
     function updateSatelliteLists() {
-        const { lat, lon, heading } = getLatLon();
+        const { lat, lon, heading, satLon } = getLatLon();
         const userPoint = { lat: lat, lng: lon };
         
         visibleSatellitesList.innerHTML = '<h4>Visible and Unblocked Satellites</h4>';
         blockedSatellitesList.innerHTML = '<h4>Blocked Satellites</h4>';
         
+        // Filter and sort all beams visible in the footprint
         const visibleBeams = Object.values(allBeamsData).filter(beamData =>
             checkFootprintVisibility(beamData, userPoint)
         ).sort((a, b) => a.longitude - b.longitude);
 
-        // Logic for selection persistence
-        const isSelectedBeamVisible = selectedBeamId && visibleBeams.some(b => `${b.satelliteId}-${b.beamId}` === selectedBeamId);
-        if (!isSelectedBeamVisible) {
-            const currentSatLon = getLatLon().satLon;
-            const newSelectedBeam = visibleBeams.find(b => b.longitude === currentSatLon);
-            selectedBeamId = newSelectedBeam ? `${newSelectedBeam.satelliteId}-${newSelectedBeam.beamId}` : null;
-        }
-
+        // Iterate directly over each visible beam
         visibleBeams.forEach(beamData => {
             const { az, el } = calcAzEl(lat, lon, beamData.longitude);
             const rel = ((az - heading) + 360) % 360;
@@ -1903,32 +1888,64 @@ ${carriersInfo}
             const li = document.createElement('div');
             li.className = 'sat-list-item';
             
+            // Get polarization for the current beam
             const polarizations = getBeamPolarizations(beamData);
-            const uniqueBeamId = `${beamData.satelliteId}-${beamData.beamId}`;
-            const beamColor = colorMap[uniqueBeamId];
-            const colorIndicator = beamColor ? `<span class="sat-list-color-indicator" style="background-color:${beamColor};"></span>` : '';
+            
+            // Text includes Satellite ID, Longitude, Beam ID, and Beam Polarizations
             const beamText = `${beamData.satelliteId} (${formatLongitude(beamData.longitude)}) - Beam ${beamData.beamId} (${polarizations})`;
             
+            // --- MODIFICATION START ---
+            // 1. Get the unique ID for the beam
+            const uniqueBeamId = `${beamData.satelliteId}-${beamData.beamId}`;
+            
+            // 2. Get the color from the colorMap
+            const beamColor = colorMap[uniqueBeamId];
+            
+            // 3. Create the colored circle span
+            // Note: The original legend uses 'i' with background-color, but a colored circle symbol (&#9679;) with color property is simpler for list items.
+            const colorCircle = `<span style="color:${beamColor}; margin-right: 5px;">&#9679;</span>`;
+            
+            // 4. Update the list item's inner HTML to include the color circle
+            let liContent = beamText;
+            
+            // Add the blockage zone information if blocked
             if (blockZones) {
                 const zoneInfo = blockZones.map(zone => {
-                    const color = zoneColors[zone.index - 1].replace("0.5", "1.0");
+                    // Use zoneColors from the JS scope, converting to solid color for the list
+                    const color = zoneColors[zone.index - 1].replace("0.5", "1.0"); 
                     return `<span style="color:${color};">&#9679;</span> Zone #${zone.index}`;
                 }).join(', ');
-                li.innerHTML = `${colorIndicator}${beamText} (${zoneInfo})`;
-            } else {
-                li.innerHTML = `${colorIndicator}${beamText}`;
+                liContent = `${beamText} (${zoneInfo})`;
             }
 
+            // Prepend the beam color circle to the content
+            li.innerHTML = colorCircle + liContent;
+            
+            // --- MODIFICATION END ---
+
+            // Set up click handler
             li.onclick = () => {
                 satLonEl.value = formatNumber(Math.abs(beamData.longitude));
                 satLonDir.value = beamData.longitude < 0 ? 'W' : 'E';
-                selectedBeamId = uniqueBeamId;
-                updateAll(); 
-                showBeamDetails(beamData);
+                updateAll();
+                highlightListItem(li, 'visibleSatellites');
+                highlightListItem(li, 'blockedSatellites');
+                showBeamDetails(beamData); // Show details for the specific beam
             };
 
-            if (uniqueBeamId === selectedBeamId) {
+            // Highlight if current SatLon and Beam matches
+            // Find the unique ID of the currently selected satellite/beam
+            const currentSatLon = getLatLon().satLon;
+            
+            const selectedBeamData = Object.values(allBeamsData).find(b => 
+                b.longitude === currentSatLon && b.satelliteId === satLonEl.value
+            );
+            const currentSelectedUniqueId = selectedBeamData ? `${selectedBeamData.satelliteId}-${selectedBeamData.beamId}` : null;
+            
+            if (currentSelectedUniqueId === uniqueBeamId) {
                 li.classList.add('selected');
+            } else {
+                li.classList.remove('selected');
             }
 
             if (blockZones) {
@@ -1947,6 +1964,29 @@ ${carriersInfo}
           const noSatellitesMessage = document.createElement('p');
           noSatellitesMessage.textContent = 'No blocked beams found.';
           blockedSatellitesList.appendChild(noSatellitesMessage);
+        }
+    }
+    
+    function highlightListItem(item, listId) {
+        const list = document.getElementById(listId);
+        if (list) {
+            // Only remove highlights in the list where the item is being clicked/highlighted
+            Array.from(list.children).forEach(child => {
+                child.classList.remove('selected');
+            });
+            item.classList.add('selected');
+        }
+        // Also ensure the other list is deselected correctly
+        const otherListId = listId === 'visibleSatellites' ? 'blockedSatellites' : 'visibleSatellites';
+        const otherList = document.getElementById(otherListId);
+        if (otherList) {
+             Array.from(otherList.children).forEach(child => {
+                // Find the corresponding item in the other list to deselect it
+                // Note: Comparing innerHTML is a crude but functional way to match the corresponding item across lists
+                if (child.innerHTML === item.innerHTML) {
+                    child.classList.remove('selected');
+                }
+            });
         }
     }
 
