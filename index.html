@@ -1573,6 +1573,34 @@ pdfBtn.addEventListener("click", () => {
         buildLegendAndMap();
         updateSatelliteDropdown();
     }
+
+    // Add this new function outside of updateSatelliteLists, e.g., near showBeamDetails
+    function showOnlyBeamOnMap(selectedBeamId) {
+        // 1. Deselect all beams and remove their layers from the map
+        Object.keys(allBeamsData).forEach(id => {
+            const beamData = allBeamsData[id];
+            beamData.isChecked = false; // Uncheck the state
+            const checkbox = document.getElementById(`beam-checkbox-${id}`);
+            if (checkbox) checkbox.checked = false; // Uncheck the legend box
+            if (mymap.hasLayer(beamData.layer)) {
+                mymap.removeLayer(beamData.layer);
+            }
+        });
+
+        // 2. Select the chosen beam and add its layer to the map
+        const beamData = allBeamsData[selectedBeamId];
+        if (beamData) {
+            beamData.isChecked = true; // Check the state
+            const checkbox = document.getElementById(`beam-checkbox-${selectedBeamId}`);
+            if (checkbox) checkbox.checked = true; // Check the legend box
+            if (!mymap.hasLayer(beamData.layer)) {
+                mymap.addLayer(beamData.layer);
+            }
+            
+            // 3. Pan the map to the satellite's longitude (optional, but good UX)
+            mymap.panTo([getLatLon().lat, beamData.longitude]); 
+        }
+    }
     
     function isPointInPolygon(point, polygon) {
         let x = point.lat, y = point.lng;
@@ -1732,11 +1760,7 @@ ${carriersInfo}
         userMarkerGroup.addLayer(L.marker(L.latLng(userLat, userLon - 360)));
         
         // 2. CLEAR AND UPDATE BEAM LAYERS
-        Object.keys(allBeamsData).forEach(id => {
-            if (mymap.hasLayer(allBeamsData[id].layer)) {
-                mymap.removeLayer(allBeamsData[id].layer);
-            }
-        });
+        // Layers are now controlled by showOnlyBeamOnMap/checkbox handler
         
         // 3. SET MAP VIEW
         mymap.setView([lat, lon], currentZoom); 
@@ -1803,7 +1827,9 @@ ${carriersInfo}
 
                 if (isVisible) {
                     // --- MODIFIED LOGIC: Set isChecked to true if visible for default display ---
-                    beamData.isChecked = true;
+                    // REVERTED: Do not set to true here. Layer logic is controlled by list click or legend click.
+                    // For buildLegendAndMap, we only ensure the map layer status matches the isChecked status, 
+                    // which is now primarily set by the list click handler or the checkbox change handler.
 
                     const item = document.createElement('div');
                     item.className = 'legend-item';
@@ -1811,7 +1837,8 @@ ${carriersInfo}
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
                     checkbox.id = `beam-checkbox-${id}`;
-                    checkbox.checked = beamData.isChecked;
+                    // Ensure the checkbox reflects the current isChecked state (which is preserved across updates)
+                    checkbox.checked = beamData.isChecked; 
                     checkbox.onchange = (e) => {
                         beamData.isChecked = e.target.checked;
                         if (e.target.checked) {
@@ -1838,7 +1865,7 @@ ${carriersInfo}
 
                     div.appendChild(item);
 
-                    // --- MODIFIED LOGIC: Add layer to map if visible (checked by default) ---
+                    // --- MODIFIED LOGIC: Add layer to map if it is currently marked as checked ---
                     if (beamData.isChecked && !mymap.hasLayer(beamData.layer)) {
                         mymap.addLayer(beamData.layer);
                     }
@@ -1927,7 +1954,11 @@ ${carriersInfo}
             li.onclick = () => {
                 satLonEl.value = formatNumber(Math.abs(beamData.longitude));
                 satLonDir.value = beamData.longitude < 0 ? 'W' : 'E';
-                updateAll();
+                
+                // *** NEW LOGIC: Show only the selected beam on the map ***
+                showOnlyBeamOnMap(uniqueBeamId); 
+                
+                updateAll(); // Call updateAll to refresh AZ/EL, graphs, and lists (which re-highlights the selection)
                 highlightListItem(li, 'visibleSatellites');
                 highlightListItem(li, 'blockedSatellites');
                 showBeamDetails(beamData); // Show details for the specific beam
@@ -1937,13 +1968,15 @@ ${carriersInfo}
             // Find the unique ID of the currently selected satellite/beam
             const currentSatLon = getLatLon().satLon;
             
-            const selectedBeamData = Object.values(allBeamsData).find(b => 
-                b.longitude === currentSatLon && b.satelliteId === satLonEl.value
-            );
-            const currentSelectedUniqueId = selectedBeamData ? `${selectedBeamData.satelliteId}-${selectedBeamData.beamId}` : null;
-            
-            if (currentSelectedUniqueId === uniqueBeamId) {
+            // To correctly highlight, we need to find which beam matches the current satLon and is 
+            // the one currently being displayed as "selected" if multiple beams share the satLon.
+            // Since the system defaults the main SatLon input, we can check if the displayed map layer is 
+            // the one we're currently listing, or if the main satLon matches.
+            // We use the simpler logic: if the current selected SatLon in the input matches this beam's longitude, highlight it.
+            if (currentSatLon === beamData.longitude && allBeamsData[uniqueBeamId].isChecked) {
                 li.classList.add('selected');
+                // Ensure details pane shows the currently selected beam (this handles the case where list is re-rendered)
+                showBeamDetails(beamData); 
             } else {
                 li.classList.remove('selected');
             }
