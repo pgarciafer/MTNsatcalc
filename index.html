@@ -793,10 +793,6 @@ function createZoneRow(start = 0.00, stop = 0.00, elBlock = 10) {
             if (num < 0) num = 0;
             if (num > 360) num = 360;
             input.value = formatNumber(num);
-        } else if (input.id === "lat") {
-            if (num < 0) num = 0;
-            if (num > 90) num = 90; // Latitude limit
-            input.value = formatNumber(num);
         } else {
             // Longitude/SatLon normalization (0 to 180 E/W)
             let dirSelect = input.id === "lon" ? lonDir : satLonDir;
@@ -910,6 +906,16 @@ function drawVesselWithREL(rel) {
     }
 
     function updateAll() {
+      // --- NEW LOGIC START: Clear all beam layers and reset state on location change ---
+      // We only clear map layers here. The isChecked state is managed right before building the legend.
+      Object.keys(allBeamsData).forEach(id => {
+          const beamData = allBeamsData[id];
+          if (mymap.hasLayer(beamData.layer)) {
+              mymap.removeLayer(beamData.layer); // Remove layer from map
+          }
+      });
+      // --- NEW LOGIC END ---
+        
       const { lat, lon, satLon, heading } = getLatLon();
       const { az, el } = calcAzEl(lat, lon, satLon);
       
@@ -1579,25 +1585,25 @@ pdfBtn.addEventListener("click", () => {
         // 1. Deselect all beams and remove their layers from the map
         Object.keys(allBeamsData).forEach(id => {
             const beamData = allBeamsData[id];
-            beamData.isChecked = false; // Uncheck the state
+            // Only update isChecked state here. Map layers are handled in updateAll/buildLegendAndMap.
+            beamData.isChecked = false; 
             const checkbox = document.getElementById(`beam-checkbox-${id}`);
-            if (checkbox) checkbox.checked = false; // Uncheck the legend box
+            if (checkbox) checkbox.checked = false; 
+            
+            // Explicitly remove layer here to ensure instantaneous map update before updateAll runs
             if (mymap.hasLayer(beamData.layer)) {
                 mymap.removeLayer(beamData.layer);
             }
         });
 
-        // 2. Select the chosen beam and add its layer to the map
+        // 2. Select the chosen beam
         const beamData = allBeamsData[selectedBeamId];
         if (beamData) {
-            beamData.isChecked = true; // Check the state
-            const checkbox = document.getElementById(`beam-checkbox-${selectedBeamId}`);
-            if (checkbox) checkbox.checked = true; // Check the legend box
-            if (!mymap.hasLayer(beamData.layer)) {
-                mymap.addLayer(beamData.layer);
-            }
+            // Set isChecked to true for the selected beam.
+            // This is the single source of truth that buildLegendAndMap will check.
+            beamData.isChecked = true;
             
-            // 3. Pan the map to the satellite's longitude (optional, but good UX)
+            // Pan the map to the satellite's longitude (optional, but good UX)
             mymap.panTo([getLatLon().lat, beamData.longitude]); 
         }
     }
@@ -1759,8 +1765,7 @@ ${carriersInfo}
         userMarkerGroup.addLayer(L.marker(L.latLng(userLat, userLon + 360)));
         userMarkerGroup.addLayer(L.marker(L.latLng(userLat, userLon - 360)));
         
-        // 2. CLEAR AND UPDATE BEAM LAYERS
-        // Layers are now controlled by showOnlyBeamOnMap/checkbox handler
+        // 2. CLEAR AND UPDATE BEAM LAYERS (Handled by updateAll() before this function runs)
         
         // 3. SET MAP VIEW
         mymap.setView([lat, lon], currentZoom); 
@@ -1776,7 +1781,24 @@ ${carriersInfo}
             return;
         }
 
-        // 4. BUILD LEGEND AND SET DEFAULT CHECKED STATE
+        // --- NEW LOGIC START: Determine Initial Default State ---
+        // If no beams are currently checked (i.e., we just entered a new location OR loaded a new file),
+        // set all visible beams to checked so they show up by default.
+        const anyBeamIsChecked = uniqueBeamIds.some(id => allBeamsData[id].isChecked);
+
+        uniqueBeamIds.forEach(id => {
+            const beamData = allBeamsData[id];
+            const isVisible = checkFootprintVisibility(beamData, userPoint);
+            
+            if (isVisible && !anyBeamIsChecked) {
+                // Default to true only if this is the first map build/location change 
+                // and nothing has been manually selected yet.
+                beamData.isChecked = true;
+            }
+        });
+        // --- NEW LOGIC END ---
+
+        // 4. BUILD LEGEND
         legendControl = L.control({position: 'bottomright'});
         legendControl.onAdd = function (map) {
             const div = L.DomUtil.create('div', 'info legend');
@@ -1826,18 +1848,14 @@ ${carriersInfo}
                 const isVisible = checkFootprintVisibility(beamData, userPoint);
 
                 if (isVisible) {
-                    // --- MODIFIED LOGIC: Set isChecked to true if visible for default display ---
-                    // REVERTED: Do not set to true here. Layer logic is controlled by list click or legend click.
-                    // For buildLegendAndMap, we only ensure the map layer status matches the isChecked status, 
-                    // which is now primarily set by the list click handler or the checkbox change handler.
-
+                    
                     const item = document.createElement('div');
                     item.className = 'legend-item';
 
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
                     checkbox.id = `beam-checkbox-${id}`;
-                    // Ensure the checkbox reflects the current isChecked state (which is preserved across updates)
+                    // The checkbox state reflects the determined 'isChecked' state
                     checkbox.checked = beamData.isChecked; 
                     checkbox.onchange = (e) => {
                         beamData.isChecked = e.target.checked;
@@ -1865,7 +1883,7 @@ ${carriersInfo}
 
                     div.appendChild(item);
 
-                    // --- MODIFIED LOGIC: Add layer to map if it is currently marked as checked ---
+                    // --- LAYER ADDITION: Add layer to map if it is currently marked as checked ---
                     if (beamData.isChecked && !mymap.hasLayer(beamData.layer)) {
                         mymap.addLayer(beamData.layer);
                     }
@@ -1965,15 +1983,8 @@ ${carriersInfo}
             };
 
             // Highlight if current SatLon and Beam matches
-            // Find the unique ID of the currently selected satellite/beam
-            const currentSatLon = getLatLon().satLon;
-            
-            // To correctly highlight, we need to find which beam matches the current satLon and is 
-            // the one currently being displayed as "selected" if multiple beams share the satLon.
-            // Since the system defaults the main SatLon input, we can check if the displayed map layer is 
-            // the one we're currently listing, or if the main satLon matches.
-            // We use the simpler logic: if the current selected SatLon in the input matches this beam's longitude, highlight it.
-            if (currentSatLon === beamData.longitude && allBeamsData[uniqueBeamId].isChecked) {
+            // We highlight the list item if its corresponding beam on the map is currently checked.
+            if (allBeamsData[uniqueBeamId].isChecked) {
                 li.classList.add('selected');
                 // Ensure details pane shows the currently selected beam (this handles the case where list is re-rendered)
                 showBeamDetails(beamData); 
