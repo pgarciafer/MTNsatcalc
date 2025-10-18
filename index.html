@@ -53,7 +53,7 @@
       height: 50vh;
       max-width: 400px;
       max-height: 400px;
-      background-image: url('https://raw.githubusercontent.com/pgarciafer/pics2PDF/main/logo.png');
+      background-image: url('https://raw.githubusercontent.com/pgarciafer/pics2PDF/main/logo1.png');
       background-repeat: no-repeat;
       background-position: center;
       background-size: contain;
@@ -216,8 +216,7 @@
     .diagram { display: flex; flex-direction: column; align-items: center; margin-bottom: 12px; }
     .diagram-info div { margin-bottom: 4px; }
     .main-column { display: flex; flex-direction: column; gap: 5px; width: 100%; }
-    .blocking-section { width: 100%; display: flex; flex-direction: column; align-items: center; }
-    .blocking-section .header-center { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .blocking-section { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 
     #mapid {
       height: 400px; width: 100%; border-radius: 8px; margin-top: 20px;
@@ -405,10 +404,7 @@
             </div>
           </div>
 
-          <div id="blockingZonesSection">
-            <div class="header-center">
-              <label>Blockage Zones</label>
-            </div>
+          <div id="blockingZonesSection" class="blocking-section">
             <table id="zonesTable" style="display:none;">
               <thead>
                 <tr>
@@ -424,7 +420,7 @@
           </div>
         </div>
 
-    <div class="coord-item" style="display:none;">
+		<div class="coord-item" style="display:none;">
             <label for="satDropdown">Visible Satellites</label>
             <select id="satDropdown"></select>
             <div style="width:48px;"></div>
@@ -432,12 +428,10 @@
         
         <div class="results-section">
             <div class="diagram-info">
-                <div id="azVal" style="font-weight:bold; text-align: center;">AZ=</div>
-                <div id="elVal" style="font-weight:bold; text-align: center;">EL=</div>
-                <div id="relVal" style="font-weight:bold; text-align: center;">REL=</div>
+                <div id="azVal">AZ=</div>
+                <div id="elVal">EL=</div>
+                <div id="relVal" style="font-weight:bold">REL=</div>
                 <div id="relBlockMsg" style="font-weight:bold; margin-top:4px;"></div>
-                <div id="visibleRange" style="text-align: center;"></div>
-                <div id="satRangesList"></div>
             </div>
             
             <div class="desktop-diagrams-row">
@@ -473,7 +467,8 @@
                     </tr>
                 </tbody>
             </table>
-            
+            <div id="visibleRange" style="font-weight:bold; text-align: center;"></div>
+            <div id="satRangesList"></div>
         </div>
 
     </div>
@@ -901,7 +896,7 @@ function createZoneRow(start = 0.00, stop = 0.00, elBlock = 10) {
       return { az, el };
     }
     const vesselImg = new Image();
-  vesselImg.crossOrigin = "anonymous";
+	vesselImg.crossOrigin = "anonymous";
     vesselImg.src = "https://pgarciafer.github.io/satcalc/IMG_0585.PNG";
     const vesselCanvas = document.getElementById("vesselCanvas");
     const vesselCtx = vesselCanvas.getContext("2d");
@@ -1098,7 +1093,7 @@ function drawVesselWithREL(rel, lat, lon, heading) {
       elVal.textContent = 'EL=' + formatNumber(el);
       const rel = ((az - heading) + 360) % 360;
       relVal.textContent = 'REL=' + formatNumber(rel);
-    
+	  
 const blockZones = checkBlockingZones(rel, el);
 const relBlockMsg = document.getElementById("relBlockMsg");
 
@@ -1109,7 +1104,7 @@ if (blockZones) {
 } else {
   relBlockMsg.textContent = "";
 }
-    
+	  
       if (vesselImg.complete) {
         drawVesselWithREL(rel, lat, lon, heading);
       } else {
@@ -1195,15 +1190,15 @@ if (blockZones) {
         setTimeout(() => copyBtn.textContent = "Copy", 1000);
       });
     });
-  
-  
-  
+	
+	
+	
 pdfBtn.addEventListener("click", () => {
     window.print();
 });
 
 
-  
+	
     // Apply normalization on input blur/change
     [latEl, lonEl, satLonEl].forEach(inp => {
       inp.addEventListener("blur", () => {
@@ -1395,8 +1390,8 @@ pdfBtn.addEventListener("click", () => {
           outPieces.push(`<div><span style="color:${zoneColor};">&#9679;</span> Zone ${idx + 1} Blockage range:  ${parts.join(', ')}</div>`);
         }
       });
-    
-    if (outPieces.length === 0) {
+	  
+	  if (outPieces.length === 0) {
         satRangesList.innerHTML = "<i>(no Blockage Zones)</i>";
         satRangesList.classList.remove("two-col");
       } else {
