@@ -382,6 +382,12 @@
       flex-shrink: 0;
       width: 600px;
     }
+    body.pdf-export-mode .card:last-child {
+      flex: 1;
+    }
+    body.pdf-export-mode .results-section .diagram-info {
+      text-align: center;
+    }
     body.pdf-export-mode .desktop-top-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -439,7 +445,7 @@
           <button id="pdfBtn" class="secondary" data-html2canvas-ignore="true">PDF</button>
         </div>
         
-        <div style="margin-bottom: 15px;">
+        <div style="margin-bottom: 15px;" data-html2canvas-ignore="true">
           <label for="file-input">Load Satellite Constellation File:</label>
           <input type="file" id="file-input" accept=".json" data-html2canvas-ignore="true">
         </div>
@@ -492,10 +498,11 @@
         
         <div class="results-section">
             <div class="diagram-info">
-                <div id="azVal">AZ=</div>
-                <div id="elVal">EL=</div>
-                <div id="relVal" style="font-weight:bold">REL=</div>
+                <div id="azVal" style="font-weight:bold; text-align: center">AZ=</div>
+                <div id="elVal" style="font-weight:bold; text-align: center">EL=</div>
+                <div id="relVal" style="font-weight:bold; text-align: center">REL=</div>
                 <div id="relBlockMsg" style="font-weight:bold; margin-top:4px;"></div>
+                <div id="visibleRange" style="font-weight:bold; text-align: center; margin-top: 8px;"></div>
             </div>
             
             <div class="desktop-diagrams-row">
@@ -531,7 +538,6 @@
                     </tr>
                 </tbody>
             </table>
-            <div id="visibleRange" style="font-weight:bold; text-align: center;"></div>
             <div id="satRangesList"></div>
         </div>
 
@@ -1290,7 +1296,7 @@ pdfBtn.addEventListener("click", () => {
         scale: 2,
         useCORS: true,
         letterRendering: true,
-        ignoreElements: (element) => element.hasAttribute('data-html2canvas-ignore')
+        ignoreElements: (element) => element.hasAttribute('data-html2canvas-ignore') || element.closest('[data-html2canvas-ignore]')
     };
 
     // Use a short timeout to ensure the DOM has fully updated after class change.
