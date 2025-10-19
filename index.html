@@ -366,7 +366,45 @@
       }
     }
     
-    /* 7. Print Styles */
+    /* 7. PDF Export Styles */
+    body.pdf-export-mode {
+      /* Prevent scrollbars from appearing during export resizing */
+      overflow-y: hidden !important;
+    }
+    body.pdf-export-mode .main-container {
+      /* Set a fixed large width and apply desktop flex layout */
+      width: 1800px;
+      flex-direction: row;
+      align-items: flex-start;
+    }
+    body.pdf-export-mode .card:first-child {
+      flex-basis: 600px;
+      flex-shrink: 0;
+      width: 600px;
+    }
+    body.pdf-export-mode .desktop-top-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    body.pdf-export-mode .desktop-diagrams-row {
+      flex-direction: row;
+      align-items: center;
+      gap: 24px;
+    }
+    body.pdf-export-mode #vessel-diagram-container {
+      flex: 0 0 260px;
+    }
+    body.pdf-export-mode .desktop-diagrams-row .diagram:last-child {
+      flex: 1;
+      min-width: 0;
+    }
+    body.pdf-export-mode .desktop-diagrams-row .diagram:last-child #elGraph {
+      max-width: 100%;
+    }
+
+    /* 8. Print Styles */
     @media print {
       body { background: none; padding: 0; }
       body::before { display: none; }
@@ -1236,8 +1274,15 @@ if (blockZones) {
   
   
 pdfBtn.addEventListener("click", () => {
+    const isMobile = window.innerWidth < 1024;
+    
     pdfBtn.textContent = 'Generating...';
     pdfBtn.disabled = true;
+
+    if (isMobile) {
+      document.body.classList.add('pdf-export-mode');
+      updateAll(); // Redraw canvases for the temporary desktop layout
+    }
 
     const elementToCapture = document.querySelector('.main-container .card:first-child');
     
@@ -1248,52 +1293,56 @@ pdfBtn.addEventListener("click", () => {
         ignoreElements: (element) => element.hasAttribute('data-html2canvas-ignore')
     };
 
-    html2canvas(elementToCapture, h2cOptions).then(canvas => {
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const { jsPDF } = window.jspdf;
-        
-        const pdf = new jsPDF({
-            orientation: 'portrait',
-            unit: 'in',
-            format: 'a4'
+    // Use a short timeout to ensure the DOM has fully updated after class change.
+    setTimeout(() => {
+        html2canvas(elementToCapture, h2cOptions).then(canvas => {
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            const { jsPDF } = window.jspdf;
+            
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'in',
+                format: 'a4'
+            });
+
+            const pageMargin = 0.5;
+            const pdfPageWidth = pdf.internal.pageSize.getWidth();
+            const pdfPageHeight = pdf.internal.pageSize.getHeight();
+            const pdfContentWidth = pdfPageWidth - (pageMargin * 2);
+            const pdfContentHeight = pdfPageHeight - (pageMargin * 2);
+
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            const aspectRatio = imgHeight / imgWidth;
+
+            let finalImgWidth = pdfContentWidth;
+            let finalImgHeight = pdfContentWidth * aspectRatio;
+            
+            if (finalImgHeight > pdfContentHeight) {
+                finalImgHeight = pdfContentHeight;
+                finalImgWidth = pdfContentHeight / aspectRatio;
+            }
+
+            const posX = (pdfPageWidth - finalImgWidth) / 2;
+            const posY = (pdfPageHeight - finalImgHeight) / 2;
+
+            pdf.addImage(imgData, 'JPEG', posX, posY, finalImgWidth, finalImgHeight);
+            
+            const filename = 'MTN_Satellite_Report.pdf';
+            pdf.save(filename);
+
+        }).catch(err => {
+            console.error("PDF generation failed:", err);
+            alert("Sorry, there was an error creating the PDF. Please check the console for details.");
+        }).finally(() => {
+            if (isMobile) {
+              document.body.classList.remove('pdf-export-mode');
+              updateAll(); // Redraw back to the original mobile layout
+            }
+            pdfBtn.textContent = 'PDF';
+            pdfBtn.disabled = false;
         });
-
-        const pageMargin = 0.5;
-        const pdfPageWidth = pdf.internal.pageSize.getWidth();
-        const pdfPageHeight = pdf.internal.pageSize.getHeight();
-        const pdfContentWidth = pdfPageWidth - (pageMargin * 2);
-        const pdfContentHeight = pdfPageHeight - (pageMargin * 2);
-
-        const imgWidth = canvas.width;
-        const imgHeight = canvas.height;
-        const aspectRatio = imgHeight / imgWidth;
-
-        // Calculate final image dimensions to fit within the content area
-        let finalImgWidth = pdfContentWidth;
-        let finalImgHeight = pdfContentWidth * aspectRatio;
-        
-        // If the scaled height is still too tall, scale based on height instead
-        if (finalImgHeight > pdfContentHeight) {
-            finalImgHeight = pdfContentHeight;
-            finalImgWidth = pdfContentHeight / aspectRatio;
-        }
-
-        // Center the image on the page
-        const posX = (pdfPageWidth - finalImgWidth) / 2;
-        const posY = (pdfPageHeight - finalImgHeight) / 2;
-
-        pdf.addImage(imgData, 'JPEG', posX, posY, finalImgWidth, finalImgHeight);
-        
-        const filename = 'MTN_Satellite_Report.pdf';
-        pdf.save(filename);
-
-    }).catch(err => {
-        console.error("PDF generation failed:", err);
-        alert("Sorry, there was an error creating the PDF. Please check the console for details.");
-    }).finally(() => {
-        pdfBtn.textContent = 'PDF';
-        pdfBtn.disabled = false;
-    });
+    }, 100);
 });
   
     // Apply normalization on input blur/change
