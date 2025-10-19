@@ -88,7 +88,7 @@
       margin-bottom: 24px;
     }
     .app-logo {
-      height: 40px;
+      height: 60px;
       width: auto;
     }
 
@@ -304,6 +304,23 @@
       gap: 12px;
       width: 100%;
     }
+    .legend-container-mobile {
+      display: none;
+    }
+
+    @media (max-width: 1023px) {
+      #mapid {
+        height: 350px;
+      }
+      .legend-container-mobile {
+        display: block;
+        padding: 0 15px 15px;
+      }
+      .legend-container-mobile .legend {
+        margin-top: 15px;
+        box-shadow: none;
+      }
+    }
 
     @media (min-width: 600px) {
       .app-header {
@@ -353,7 +370,7 @@
     @media print {
       body { background: none; padding: 0; }
       body::before { display: none; }
-      .button-row, button, #file-input, label[for="file-input"], .legend {
+      .button-row, button, #file-input, label[for="file-input"], .legend, #legend-container-mobile {
         display: none !important;
       }
       body, .card {
@@ -463,13 +480,13 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td>AZ Trim</td>
+                        <td>AZ</td>
                         <td><input type="number" id="azGreen"></td>
                         <td><input type="number" id="azCurrent" value="0"></td>
                         <td><input type="text" id="azNew" readonly></td>
                     </tr>
                     <tr>
-                        <td>EL Trim</td>
+                        <td>EL</td>
                         <td><input type="number" id="elGreen"></td>
                         <td><input type="number" id="elCurrent" value="0"></td>
                         <td><input type="text" id="elNew" readonly></td>
@@ -485,6 +502,7 @@
 
   <div class="card" style="display:flex; flex-direction:column;">
     <div id="mapid"></div>
+    <div id="legend-container-mobile"></div>
 
     <div class="sat-lists-container">
         <div id="visibleSatellites" class="sat-list">
@@ -1659,7 +1677,7 @@ pdfBtn.addEventListener("click", () => {
         });
         
         const sortedBeamIds = Object.keys(allBeamsData).sort((a, b) => {
-            return allBeamsData[a].longitude - allBeamsData[b].longitude;
+            return allBeamsData[a].longitude - b.longitude;
         });
 
         colorMap = {};
@@ -1811,7 +1829,14 @@ ${carriersInfo}
     }
 
     function buildLegendAndMap() {
-        if (legendControl) mymap.removeControl(legendControl);
+        if (legendControl) {
+            mymap.removeControl(legendControl);
+            legendControl = null;
+        }
+        const mobileLegendContainer = document.getElementById('legend-container-mobile');
+        if (mobileLegendContainer) {
+          mobileLegendContainer.innerHTML = '';
+        }
 
         const { lat, lon, satLon } = getLatLon();
         const userPoint = L.latLng(lat, lon);
@@ -1833,34 +1858,29 @@ ${carriersInfo}
             return;
         }
 
-        // --- NEW LOGIC TO DETERMINE WHICH BEAMS SHOULD BE CHECKED ---
         const visibleBeamLongitudes = new Set();
         uniqueBeamIds.forEach(id => {
-            if (checkFootprintVisibility(allBeamsData[id], userPoint)) {
+            if (checkFootprintVisibility(allBeamsData[id], { lat, lng: lon })) {
                 visibleBeamLongitudes.add(allBeamsData[id].longitude);
             }
         });
 
-        // 1. If user-entered satLon is not in the list of visible beams, uncheck everything.
         if (visibleBeamLongitudes.size > 0 && !visibleBeamLongitudes.has(satLon)) {
             uniqueBeamIds.forEach(id => {
                 allBeamsData[id].isChecked = false;
             });
         } else {
-            // 2. Otherwise, if nothing is checked (e.g., on first load with a valid satLon),
-            // auto-check the beams that match the current satLon.
             const anyBeamIsChecked = uniqueBeamIds.some(id => allBeamsData[id].isChecked);
             if (!anyBeamIsChecked && visibleBeamLongitudes.has(satLon)) {
                 uniqueBeamIds.forEach(id => {
                     const beamData = allBeamsData[id];
-                    if (checkFootprintVisibility(beamData, userPoint) && beamData.longitude === satLon) {
+                    if (checkFootprintVisibility(beamData, { lat, lng: lon }) && beamData.longitude === satLon) {
                         beamData.isChecked = true;
                     }
                 });
             }
         }
         
-        // 3. Sync map layers with the determined `isChecked` state.
         uniqueBeamIds.forEach(id => {
             const beamData = allBeamsData[id];
             if (beamData.layer) {
@@ -1871,12 +1891,9 @@ ${carriersInfo}
                 }
             }
         });
-        // --- END NEW LOGIC ---
 
-        legendControl = L.control({position: 'bottomright'});
-        legendControl.onAdd = function (map) {
-            const div = L.DomUtil.create('div', 'info legend');
-            div.innerHTML = '<h4>Select Beams</h4>';
+        const createLegendContent = (container) => {
+            container.innerHTML = '<h4>Select Beams</h4>';
 
             const selectAllBtn = document.createElement('button');
             selectAllBtn.className = 'legend-button';
@@ -1894,7 +1911,7 @@ ${carriersInfo}
                     }
                 });
             };
-            div.appendChild(selectAllBtn);
+            container.appendChild(selectAllBtn);
 
             const deselectAllBtn = document.createElement('button');
             deselectAllBtn.className = 'legend-button';
@@ -1911,7 +1928,7 @@ ${carriersInfo}
                 });
                 showBeamDetails(null);
             };
-            div.appendChild(deselectAllBtn);
+            container.appendChild(deselectAllBtn);
             
             uniqueBeamIds.forEach((id) => {
                 const beamData = allBeamsData[id];
@@ -1943,14 +1960,29 @@ ${carriersInfo}
                     text.innerHTML = `<b>${beamData.satelliteId}</b> (${formatLongitude(beamData.longitude)}) - Beam ${beamData.beamId} (${polarizations})`;
                     item.appendChild(text);
 
-                    div.appendChild(item);
+                    container.appendChild(item);
                 }
             });
-            L.DomEvent.disableScrollPropagation(div);
-            L.DomEvent.disableClickPropagation(div);
-            return div;
+            L.DomEvent.disableScrollPropagation(container);
+            L.DomEvent.disableClickPropagation(container);
         };
-        legendControl.addTo(mymap);
+
+        if (window.innerWidth < 1024) {
+            const legendDiv = document.createElement('div');
+            legendDiv.className = 'info legend';
+            createLegendContent(legendDiv);
+            if (mobileLegendContainer) {
+                mobileLegendContainer.appendChild(legendDiv);
+            }
+        } else {
+            legendControl = L.control({position: 'bottomright'});
+            legendControl.onAdd = function (map) {
+                const div = L.DomUtil.create('div', 'info legend');
+                createLegendContent(div);
+                return div;
+            };
+            legendControl.addTo(mymap);
+        }
     }
     
     function generateColors(num) {
