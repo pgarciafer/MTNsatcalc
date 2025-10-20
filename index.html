@@ -1027,29 +1027,37 @@ function createZoneRow(start = 0.00, stop = 0.00, elBlock = 10) {
         const latR = lat * toRad;
         const lonR = lon * toRad;
         
-        const g = lonR - (satLon * toRad); // Difference in longitude
+        const g = lonR - (satLon * toRad); // Difference in longitude in radians
 
         const L = latR;
-
-        // Intermediate calculation
-        const r_c = Math.sqrt(Math.pow(R + H, 2) - Math.pow(R, 2) * Math.pow(Math.cos(L), 2) * (1 - Math.pow(Math.cos(g), 2)));
-        const r_s = R * Math.cos(L) * Math.cos(g);
-        const l_s = (r_c - r_s) / R;
 
         // Elevation calculation
         const el = Math.atan((Math.cos(L) * Math.cos(g) - R / (R + H)) / Math.sqrt(1 - Math.pow(Math.cos(L), 2) * Math.pow(Math.cos(g), 2))) / toRad;
 
         // Azimuth calculation
-        let az = Math.atan(Math.tan(Math.abs(g)) / Math.sin(L)) / toRad;
-
-        if (lat < 0) { // Southern hemisphere
-            if (g > 0) az = 180 - az;
-        } else { // Northern hemisphere
-            if (g < 0) az = 180 - az;
+        let az;
+        
+        // Handle equator case to avoid division by zero
+        if (Math.abs(lat) < 1e-6) {
+            az = (g > 0) ? 270.0 : 90.0;
+        } else {
+            // Intermediate angle (gamma), always positive, in [0, 90] degrees
+            const gamma = Math.atan(Math.tan(Math.abs(g)) / Math.sin(Math.abs(L))) / toRad;
+        
+            if (lat > 0) { // Northern hemisphere
+                if (g < 0) { // Satellite is East
+                    az = 180.0 - gamma;
+                } else { // Satellite is West
+                    az = 180.0 + gamma;
+                }
+            } else { // Southern hemisphere
+                if (g < 0) { // Satellite is East
+                    az = gamma;
+                } else { // Satellite is West
+                    az = 360.0 - gamma;
+                }
+            }
         }
-        if (g > 0 && lat > 0) az = 180 + az;
-        if (g < 0 && lat < 0) az = 360 - az;
-        if (az > 360) az -= 360;
         
         return { az, el };
     }
