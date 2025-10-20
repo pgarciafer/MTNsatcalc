@@ -317,7 +317,7 @@
     }
     #relBlockMsg {
       font-weight: 600;
-      min-height: 1.2em; /* Prevent layout shift on content change */
+      min-height: 2.4em; /* Prevent layout shift on content change */
     }
 
     /* 6. Layout & Responsiveness */
@@ -1019,51 +1019,69 @@ function createZoneRow(start = 0.00, stop = 0.00, elBlock = 10) {
       const satLon = satLonDir.value === "E" ? satLonVal : -satLonVal;
       return { lat, lon, satLon, heading: headingVal };
     }
-    function calcAzEl(lat, lon, satLon) {
-        const toRad = Math.PI / 180;
-        const R = 6378.137; // Earth radius in km
-        const H = 35786.0; // Geostationary altitude in km
+    
+    function calcAzEl(observerLat, observerLon, satelliteLon) {
+        const toRad = Math.PI / 180.0;
+        const toDeg = 180.0 / Math.PI;
 
-        const latR = lat * toRad;
-        const lonR = lon * toRad;
+        // WGS-84 ellipsoid parameters
+        const a = 6378.137;        // semi-major axis (km)
+        const f = 1 / 298.257223563; // flattening
+        const e2 = f * (2 - f);    // eccentricity squared
+
+        // Geostationary orbit radius
+        const R_orbit = 42164.0;   // km from Earth's center
+
+        // 1. Observer's position in ECEF coordinates
+        const latRad = observerLat * toRad;
+        const lonRad = observerLon * toRad;
+        const sinLat = Math.sin(latRad);
+        const cosLat = Math.cos(latRad);
+
+        const N = a / Math.sqrt(1 - e2 * sinLat * sinLat);
+        const obsX = N * cosLat * Math.cos(lonRad);
+        const obsY = N * cosLat * Math.sin(lonRad);
+        const obsZ = N * (1 - e2) * sinLat;
+
+        // 2. Satellite's position in ECEF coordinates
+        const satLonRad = satelliteLon * toRad;
+        const satX = R_orbit * Math.cos(satLonRad);
+        const satY = R_orbit * Math.sin(satLonRad);
+        const satZ = 0;
+
+        // 3. Vector from observer to satellite in ECEF
+        const dX = satX - obsX;
+        const dY = satY - obsY;
+        const dZ = satZ - obsZ;
+
+        // 4. Rotate the ECEF vector to the observer's local ENU (East-North-Up) frame
+        const sinLon = Math.sin(lonRad);
+        const cosLon = Math.cos(lonRad);
+
+        const east  = -sinLon * dX + cosLon * dY;
+        const north = -sinLat * cosLon * dX - sinLat * sinLon * dY + cosLat * dZ;
+        const up    =  cosLat * cosLon * dX + cosLat * sinLon * dY + sinLat * dZ;
+
+        // 5. Calculate elevation and azimuth
+        const range = Math.sqrt(east * east + north * north + up * up);
+        const elevation = Math.asin(up / range) * toDeg;
         
-        const g = lonR - (satLon * toRad); // Difference in longitude in radians
-
-        const L = latR;
-
-        // Elevation calculation
-        const el = Math.atan((Math.cos(L) * Math.cos(g) - R / (R + H)) / Math.sqrt(1 - Math.pow(Math.cos(L), 2) * Math.pow(Math.cos(g), 2))) / toRad;
-
-        // Azimuth calculation
-        let az;
-        
-        // Handle equator case to avoid division by zero
-        if (Math.abs(lat) < 1e-6) {
-            az = (g > 0) ? 270.0 : 90.0;
-        } else {
-            // Intermediate angle (gamma), always positive, in [0, 90] degrees
-            const gamma = Math.atan(Math.tan(Math.abs(g)) / Math.sin(Math.abs(L))) / toRad;
-        
-            if (lat > 0) { // Northern hemisphere
-                if (g < 0) { // Satellite is East
-                    az = 180.0 - gamma;
-                } else { // Satellite is West
-                    az = 180.0 + gamma;
-                }
-            } else { // Southern hemisphere
-                if (g < 0) { // Satellite is East
-                    az = gamma;
-                } else { // Satellite is West
-                    az = 360.0 - gamma;
-                }
-            }
+        // If elevation is negative, satellite is below the horizon.
+        if (elevation < 0) {
+            return { az: 0, el: -1 };
         }
-        
-        return { az, el };
+
+        let azimuth = Math.atan2(east, north) * toDeg;
+        if (azimuth < 0) {
+            azimuth += 360.0;
+        }
+
+        return { az: azimuth, el: elevation };
     }
+    
     const vesselImg = new Image();
   vesselImg.crossOrigin = "anonymous";
-    vesselImg.src = "https://pgarciafer.github.io/satcalc/IMG_0585.PNG";
+    vesselImg.src = "https://raw.githubusercontent.com/pgarciafer/satcalc/main/IMG_0585.PNG";
     const vesselCanvas = document.getElementById("vesselCanvas");
     const vesselCtx = vesselCanvas.getContext("2d");
 function drawVesselWithREL(rel, lat, lon, heading) {
@@ -1265,7 +1283,7 @@ function drawVesselWithREL(rel, lat, lon, heading) {
       const relBlockMsg = document.getElementById("relBlockMsg");
       if (el < MIN_ELEVATION) {
           elVal.style.color = 'var(--danger-color)';
-          relBlockMsg.textContent = `Elevation is below minimum (${MIN_ELEVATION}°)`;
+          relBlockMsg.innerHTML = `Satellite Out of Range.<br>Elevation is below minimum (${MIN_ELEVATION}°)`;
           relBlockMsg.style.color = 'var(--danger-color)';
       } else {
           elVal.style.color = ''; // Use CSS default
@@ -1285,23 +1303,54 @@ function drawVesselWithREL(rel, lat, lon, heading) {
         vesselImg.onload = () => drawVesselWithREL(rel, lat, lon, heading);
       }
       
+      // Calculate and display visible satellite range
       const step = 0.5;
-      let visibleLons = [];
+      let segments = [];
+      let currentSegment = null;
+
+      // Iterate from -180 to 180 to find continuous visible segments
       for (let lonSat = -180; lonSat <= 180; lonSat += step) {
         const { el: testEl } = calcAzEl(lat, lon, lonSat);
-        if (testEl > MIN_ELEVATION) visibleLons.push(lonSat);
+        const isVisible = testEl > MIN_ELEVATION;
+
+        if (isVisible && !currentSegment) {
+          // Start of a new visible segment
+          currentSegment = { start: lonSat };
+        } else if (!isVisible && currentSegment) {
+          // End of the current visible segment
+          currentSegment.end = lonSat - step; // The last visible longitude
+          segments.push(currentSegment);
+          currentSegment = null;
+        }
       }
-      if (visibleLons.length > 0) {
-        const minLonRaw = Math.min(...visibleLons);
-        const maxLonRaw = Math.max(...visibleLons);
+
+      // If a segment is still open at the end of the loop (i.e., visible up to 180)
+      if (currentSegment) {
+        currentSegment.end = 180;
+        segments.push(currentSegment);
+      }
+
+      const visibleRangeEl = document.getElementById("visibleRange");
+      if (segments.length === 0) {
+        visibleRangeEl.innerHTML = `No satellites visible above ${MIN_ELEVATION}°`;
+      } else {
+        let minLonRaw, maxLonRaw;
+        
+        // Check for wrap-around case: two segments, one touching -180 and the other 180
+        if (segments.length > 1 && segments[0].start === -180 && segments[segments.length - 1].end === 180) {
+          minLonRaw = segments[segments.length - 1].start;
+          maxLonRaw = segments[0].end;
+        } else {
+          // Standard case: a single visible arc
+          minLonRaw = segments[0].start;
+          maxLonRaw = segments[0].end;
+        }
+
         const minLon = formatLonEW(minLonRaw);
         const maxLon = formatLonEW(maxLonRaw);
-        document.getElementById("visibleRange").innerHTML =
-          `Visible range (EL > ${MIN_ELEVATION}°):<br>${minLon} to ${maxLon}`;
-      } else {
-        document.getElementById("visibleRange").innerHTML =
-          `No satellites visible above horizon`;
+        visibleRangeEl.innerHTML = `Visible range (EL > ${MIN_ELEVATION}°):<br>${minLon} to ${maxLon}`;
       }
+
       copyBtn.disabled = false;
       pdfBtn.disabled = false;
       computeSatRangesAndRender();
