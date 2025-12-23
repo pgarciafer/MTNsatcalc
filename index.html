@@ -6,6 +6,7 @@
   <title>Satellite Look Angle Calculator</title>
   
   <link rel="icon" href="https://pgarciafer.github.io/shared-design-system/icons/Favicon-MTN.png" type="image/png">
+  
   <link rel="stylesheet" href="https://pgarciafer.github.io/shared-design-system/css/style.css">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -21,9 +22,10 @@
     }
 
     body {
-      /* MODIFIED: Removed local font-family so it inherits from style.css */
+      /* Ensure variables from style.css are active */
       background-color: var(--bg-color);
       color: var(--text-color);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       
       /* SatCalc Specific: Vertical stack for Header + Main Container */
       display: flex;
@@ -419,8 +421,8 @@
         </div>
         
         <div style="margin-bottom: 15px;" data-html2canvas-ignore="true">
-          <label for="file-input">Load Satellite Constellation File:</label>
-          <input type="file" id="file-input" accept=".json" data-html2canvas-ignore="true">
+          <label for="file-input">Load Satellite Constellation File (.json or .zip):</label>
+          <input type="file" id="file-input" accept=".json,.zip" data-html2canvas-ignore="true">
         </div>
 
         <div class="desktop-top-row">
@@ -548,6 +550,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <script>
     const latEl=document.getElementById('lat'), lonEl=document.getElementById('lon');
@@ -1834,19 +1837,37 @@ pdfBtn.addEventListener("click", () => {
       return newPoints;
     }
     
-    function handleFileSelect(event) {
+    async function handleFileSelect(event) {
       const file = event.target.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(e) {
+
+      const isZip = file.name.toLowerCase().endsWith('.zip') || file.type.includes('zip');
+      const isJson = file.name.toLowerCase().endsWith('.json') || file.type.includes('json');
+
+      if (isZip) {
         try {
-          const jsonContent = JSON.parse(e.target.result);
-          processConstellationData(jsonContent);
+          const zip = await JSZip.loadAsync(file);
+          const constFile = zip.file(/constellation_opt\.json/i)[0];
+          if (constFile) {
+            const jsonText = await constFile.async('string');
+            processConstellationData(JSON.parse(jsonText));
+          } else {
+            alert('No constellation_opt.json found inside the zip.');
+          }
         } catch (error) {
-          alert('Error parsing JSON file: ' + error.message);
+          alert('Error processing zip file: ' + error.message);
         }
-      };
-      reader.readAsText(file);
+      } else if (isJson) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          try {
+            processConstellationData(JSON.parse(e.target.result));
+          } catch (error) {
+            alert('Error parsing JSON: ' + error.message);
+          }
+        };
+        reader.readAsText(file);
+      }
     }
     
     function processConstellationData(data) {
@@ -2296,40 +2317,5 @@ ${carriersInfo}
     }
 
   </script>
-
-<script>
-  // Wait for the browser to finish loading fonts
-  document.fonts.ready.then(function () {
-    // Check if "CorporateFont" is properly loaded
-    // IMPORTANT: Ensure this name matches the @font-face family name in your shared style.css
-    const fontName = 'CorporateFont'; 
-    
-    // Check if the font is active. If checks fail, it usually means the font file 404'd or CORS blocked it.
-    if (!document.fonts.check(`12px "${fontName}"`)) {
-        
-        const warning = document.createElement('div');
-        warning.style.cssText = `
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            background-color: #ff4444; 
-            color: white; 
-            text-align: center; 
-            padding: 15px; 
-            font-weight: bold; 
-            z-index: 10000;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        `;
-        warning.innerHTML = `⚠️ FONT ERROR: "${fontName}" could not be loaded. <br> <span style="font-weight:normal; font-size: 0.9em;">Check that the TTF file is in the "fonts" folder and the name in style.css is correct.</span>`;
-        
-        document.body.prepend(warning);
-        console.error(`Font check failed: ${fontName} is not active.`);
-    } else {
-        console.log(`Success: ${fontName} is loaded and active.`);
-    }
-  });
-</script>
-
 </body>
 </html>
